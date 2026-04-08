@@ -4,18 +4,9 @@
 <meta charset="UTF-8">
 <title>Raid Planner</title>
 <style>
-body {
-  background:#0f0f0f;
-  color:#fff;
-  font-family: Arial;
-  padding:20px;
-}
-.container {
-  display:flex;
-  gap:20px;
-}
+body { background:#0f0f0f; color:#fff; font-family: Arial; padding:20px; }
+.container { display:flex; gap:20px; }
 
-/* GROUPS */
 .groups { flex:1; }
 .group {
   background:#111;
@@ -31,22 +22,12 @@ body {
   cursor:grab;
 }
 
-/* SUMMARY */
-.summary {
-  width:400px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-.panel {
-  background:#111;
-  padding:10px;
-  border:1px solid #333;
-}
+.summary { width:400px; display:flex; flex-direction:column; gap:10px; }
+.panel { background:#111; padding:10px; border:1px solid #333; }
+
 .item strong { color:#a335ee; }
 .highlight { color:#ff5555; }
 
-/* TOOLTIP */
 .tooltip {
   position:absolute;
   background:#000;
@@ -63,7 +44,6 @@ body {
 <h1>Raid Planner</h1>
 
 <div class="container">
-
   <div class="groups">
     <h2>Unassigned</h2>
     <div id="unassigned" class="group"></div>
@@ -85,171 +65,197 @@ body {
       <div id="summary2"></div>
     </div>
   </div>
-
 </div>
 
 <div id="tooltip" class="tooltip"></div>
 
 <script>
 
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+// 🔹 REPLACE THESE
+const LOOT_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+const RAID_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vREW76caK79cfWH77Rw_c4xaS11POYR3WxoBff0EW6_8njw36DQGqE3dSLZNYliAHKR1F7drFS6wpbS/pub?output=csv";
 
-let allData = [];
 let players = {};
 let draggedPlayer = null;
 
+// 🎨 Class colors
+const classColors = {
+  Warrior:"#C79C6E", Mage:"#69CCF0", Priest:"#FFFFFF",
+  Druid:"#FF7D0A", Rogue:"#FFF569", Hunter:"#ABD473",
+  Paladin:"#F58CBA", Shaman:"#0070DE", Warlock:"#9482C9"
+};
+
 // ---------------- CSV PARSER
 function parseCSV(text) {
-  const rows = [];
-  const lines = text.split("\n");
-
-  for (let line of lines) {
-    const cols = [];
-    let current = "";
-    let insideQuotes = false;
-
-    for (let char of line) {
-      if (char === '"') insideQuotes = !insideQuotes;
-      else if (char === ',' && !insideQuotes) {
-        cols.push(current);
-        current = "";
-      } else current += char;
+  return text.split("\n").map(line=>{
+    let cols=[],cur="",q=false;
+    for(let c of line){
+      if(c=='"') q=!q;
+      else if(c==','&&!q){cols.push(cur);cur="";}
+      else cur+=c;
     }
-    cols.push(current);
-
-    rows.push(cols.map(c => c.trim().replace(/^"|"$/g, "")));
-  }
-  return rows;
+    cols.push(cur);
+    return cols.map(v=>v.trim().replace(/^"|"$/g,""));
+  });
 }
 
-// ---------------- LOAD
-async function loadData() {
-  const res = await fetch(CSV_URL);
-  const text = await res.text();
+// ---------------- LOAD BOTH
+async function loadAll() {
+  const [lootRes, raidRes] = await Promise.all([
+    fetch(LOOT_CSV),
+    fetch(RAID_CSV)
+  ]);
 
-  const rows = parseCSV(text);
-  const headers = rows[0];
+  const lootRows = parseCSV(await lootRes.text());
+  const raidRows = parseCSV(await raidRes.text());
 
-  const playerIndex = headers.findIndex(h => h.toLowerCase().includes("name"));
-  const itemIndex   = headers.findIndex(h => h.toLowerCase().includes("item"));
-  const statusIndex = headers.findIndex(h => h.toLowerCase().includes("status"));
-
-  rows.slice(1).forEach(cols => {
-    const player = cols[playerIndex];
-    const item   = cols[itemIndex];
-    const status = cols[statusIndex];
-
-    if (!player) return;
-
-    if (!players[player]) {
-      players[player] = { name: player, group: "unassigned", needs: [] };
-    }
-
-    if (status === "Need") {
-      players[player].needs.push(item);
-    }
-
-    allData.push({player, item, status});
-  });
+  buildRaidData(raidRows);
+  buildLootData(lootRows);
 
   renderAll();
 }
 
-// ---------------- RENDER ALL
-function renderAll() {
+// ---------------- RAID DATA
+function buildRaidData(rows){
+  const headers = rows[0];
+
+  const nameI = headers.findIndex(h=>h.toLowerCase().includes("player") || h.toLowerCase().includes("name"));
+  const classI= headers.findIndex(h=>h.toLowerCase().includes("class"));
+  const specI = headers.findIndex(h=>h.toLowerCase().includes("spec"));
+  const statusI=headers.findIndex(h=>h.toLowerCase().includes("status"));
+
+  rows.slice(1).forEach(r=>{
+    const name=r[nameI];
+    const status=r[statusI];
+
+    if(!name) return;
+
+    // ❌ remove absent / not signed
+    if(status && !status.toLowerCase().includes("accept")) return;
+
+    players[name]={
+      name,
+      class:r[classI] || "Unknown",
+      spec:r[specI] || "",
+      group:"unassigned",
+      needs:[]
+    };
+  });
+}
+
+// ---------------- LOOT DATA
+function buildLootData(rows){
+  const headers = rows[0];
+
+  const nameI = headers.findIndex(h=>h.toLowerCase().includes("name"));
+  const itemI = headers.findIndex(h=>h.toLowerCase().includes("item"));
+  const statusI=headers.findIndex(h=>h.toLowerCase().includes("status"));
+
+  rows.slice(1).forEach(r=>{
+    const name=r[nameI];
+    const item=r[itemI];
+    const status=r[statusI];
+
+    if(!players[name]) return; // ignore non-signed players
+
+    if(status==="Need"){
+      players[name].needs.push(item);
+    }
+  });
+}
+
+// ---------------- RENDER
+function renderAll(){
   renderPlayers();
   renderSummaries();
 }
 
 // ---------------- PLAYERS
-function renderPlayers() {
+function renderPlayers(){
   ["unassigned","group1","group2"].forEach(id=>{
-    const el = document.getElementById(id);
+    const el=document.getElementById(id);
     el.innerHTML="";
-    el.ondragover = e => e.preventDefault();
-    el.ondrop = () => dropPlayer(id);
+    el.ondragover=e=>e.preventDefault();
+    el.ondrop=()=>dropPlayer(id);
   });
 
   Object.values(players).forEach(p=>{
-    const div = document.createElement("div");
+    const div=document.createElement("div");
     div.className="player";
-    div.innerText = `${p.name} (${p.needs.length})`;
-    div.draggable = true;
+    div.innerText=`${p.name} (${p.needs.length})`;
+    div.style.color=classColors[p.class] || "#fff";
 
-    div.ondragstart = () => draggedPlayer = p;
+    div.draggable=true;
+    div.ondragstart=()=>draggedPlayer=p;
 
-    // tooltip
-    div.onmouseenter = e => showTooltip(e, p);
-    div.onmouseleave = hideTooltip;
+    div.onmouseenter=e=>showTooltip(e,p);
+    div.onmouseleave=hideTooltip;
 
     document.getElementById(p.group).appendChild(div);
   });
 }
 
-// ---------------- DRAG DROP
-function dropPlayer(group) {
-  if (!draggedPlayer) return;
-  draggedPlayer.group = group;
+// ---------------- DRAG
+function dropPlayer(group){
+  if(!draggedPlayer) return;
+  draggedPlayer.group=group;
   renderAll();
 }
 
 // ---------------- TOOLTIP
-function showTooltip(e, player) {
-  const tooltip = document.getElementById("tooltip");
-  tooltip.innerHTML = player.needs.length
-    ? player.needs.join("<br>")
-    : "No needed items";
-
-  tooltip.style.left = e.pageX + 10 + "px";
-  tooltip.style.top = e.pageY + 10 + "px";
-  tooltip.style.display = "block";
+function showTooltip(e,p){
+  const t=document.getElementById("tooltip");
+  t.innerHTML=`
+    <b>${p.name}</b><br>
+    ${p.class} ${p.spec}<br><br>
+    ${p.needs.join("<br>") || "No needed items"}
+  `;
+  t.style.left=e.pageX+10+"px";
+  t.style.top=e.pageY+10+"px";
+  t.style.display="block";
 }
-
-function hideTooltip() {
-  document.getElementById("tooltip").style.display = "none";
+function hideTooltip(){
+  document.getElementById("tooltip").style.display="none";
 }
 
 // ---------------- SUMMARY
-function buildSummary(groupName) {
-  const summary = {};
-
+function buildSummary(group){
+  const s={};
   Object.values(players)
-    .filter(p => p.group === groupName)
+    .filter(p=>p.group===group)
     .forEach(p=>{
       p.needs.forEach(item=>{
-        if (!summary[item]) summary[item] = [];
-        summary[item].push(p.name);
+        if(!s[item]) s[item]=[];
+        s[item].push(p.name);
       });
     });
-
-  return summary;
+  return s;
 }
 
-function renderSummary(containerId, summary) {
-  const container = document.getElementById(containerId);
-  container.innerHTML="";
+function renderSummary(id,data){
+  const el=document.getElementById(id);
+  el.innerHTML="";
 
-  Object.entries(summary)
-    .sort((a,b)=>b[1].length - a[1].length)
-    .forEach(([item, list])=>{
-      const div = document.createElement("div");
-      const highlight = list.length >= 3 ? "highlight":"";
-
-      div.innerHTML = `
-        <strong class="${highlight}">${item}</strong> (${list.length})
+  Object.entries(data)
+    .sort((a,b)=>b[1].length-a[1].length)
+    .forEach(([item,list])=>{
+      const div=document.createElement("div");
+      const h=list.length>=3?"highlight":"";
+      div.innerHTML=`
+        <strong class="${h}">${item}</strong> (${list.length})
         <br>${list.join(", ")}
       `;
-      container.appendChild(div);
+      el.appendChild(div);
     });
 }
 
-function renderSummaries() {
+function renderSummaries(){
   renderSummary("summary1", buildSummary("group1"));
   renderSummary("summary2", buildSummary("group2"));
 }
 
 // ----------------
-loadData();
+loadAll();
 
 </script>
 
