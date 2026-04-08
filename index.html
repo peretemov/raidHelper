@@ -14,6 +14,8 @@ body {
   display:flex;
   gap:20px;
 }
+
+/* GROUPS */
 .groups { flex:1; }
 .group {
   background:#111;
@@ -26,17 +28,34 @@ body {
   padding:5px;
   margin:3px 0;
   background:#222;
-  cursor:pointer;
+  cursor:grab;
 }
+
+/* SUMMARY */
 .summary {
-  width:350px;
+  width:400px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.panel {
   background:#111;
   padding:10px;
   border:1px solid #333;
 }
-.item { margin-bottom:10px; }
 .item strong { color:#a335ee; }
 .highlight { color:#ff5555; }
+
+/* TOOLTIP */
+.tooltip {
+  position:absolute;
+  background:#000;
+  border:1px solid #555;
+  padding:6px;
+  font-size:12px;
+  display:none;
+  z-index:100;
+}
 </style>
 </head>
 <body>
@@ -44,6 +63,7 @@ body {
 <h1>Raid Planner</h1>
 
 <div class="container">
+
   <div class="groups">
     <h2>Unassigned</h2>
     <div id="unassigned" class="group"></div>
@@ -56,21 +76,29 @@ body {
   </div>
 
   <div class="summary">
-    <h2>Items Needed</h2>
-    <div id="summary"></div>
+    <div class="panel">
+      <h3>Group 1 Needs</h3>
+      <div id="summary1"></div>
+    </div>
+    <div class="panel">
+      <h3>Group 2 Needs</h3>
+      <div id="summary2"></div>
+    </div>
   </div>
+
 </div>
+
+<div id="tooltip" class="tooltip"></div>
 
 <script>
 
-// 🔹 YOUR CSV
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
 
 let allData = [];
 let players = {};
+let draggedPlayer = null;
 
-// --------------------
-// PROPER CSV PARSER
+// ---------------- CSV PARSER
 function parseCSV(text) {
   const rows = [];
   const lines = text.split("\n");
@@ -80,63 +108,41 @@ function parseCSV(text) {
     let current = "";
     let insideQuotes = false;
 
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-
-      if (char === '"') {
-        insideQuotes = !insideQuotes;
-      } else if (char === ',' && !insideQuotes) {
+    for (let char of line) {
+      if (char === '"') insideQuotes = !insideQuotes;
+      else if (char === ',' && !insideQuotes) {
         cols.push(current);
         current = "";
-      } else {
-        current += char;
-      }
+      } else current += char;
     }
     cols.push(current);
+
     rows.push(cols.map(c => c.trim().replace(/^"|"$/g, "")));
   }
-
   return rows;
 }
 
-// --------------------
-// LOAD DATA
+// ---------------- LOAD
 async function loadData() {
   const res = await fetch(CSV_URL);
   const text = await res.text();
 
-  console.log("RAW CSV:", text);
-
   const rows = parseCSV(text);
-
   const headers = rows[0];
-  console.log("HEADERS:", headers);
 
-  // 🔍 Auto-detect columns
   const playerIndex = headers.findIndex(h => h.toLowerCase().includes("name"));
   const itemIndex   = headers.findIndex(h => h.toLowerCase().includes("item"));
   const statusIndex = headers.findIndex(h => h.toLowerCase().includes("status"));
 
-  console.log({playerIndex, itemIndex, statusIndex});
-
-  if (playerIndex === -1 || itemIndex === -1 || statusIndex === -1) {
-    alert("Column detection failed. Check your form headers.");
-    return;
-  }
-
   rows.slice(1).forEach(cols => {
-    const player = cols[playerIndex]?.trim();
-    const item   = cols[itemIndex]?.trim();
-    const status = cols[statusIndex]?.trim();
+    const player = cols[playerIndex];
+    const item   = cols[itemIndex];
+    const status = cols[statusIndex];
 
     if (!player) return;
 
     if (!players[player]) {
-      players[player] = {
-        name: player,
-        group: "unassigned",
-        needs: []
-      };
+      players[player] = { name: player, group: "unassigned", needs: [] };
     }
 
     if (status === "Need") {
@@ -146,75 +152,103 @@ async function loadData() {
     allData.push({player, item, status});
   });
 
-  console.log("PARSED DATA:", allData);
-
-  renderPlayers();
-  renderSummary();
+  renderAll();
 }
 
-// --------------------
-// RENDER PLAYERS
+// ---------------- RENDER ALL
+function renderAll() {
+  renderPlayers();
+  renderSummaries();
+}
+
+// ---------------- PLAYERS
 function renderPlayers() {
-  ["unassigned", "group1", "group2"].forEach(g => {
-    document.getElementById(g).innerHTML = "";
+  ["unassigned","group1","group2"].forEach(id=>{
+    const el = document.getElementById(id);
+    el.innerHTML="";
+    el.ondragover = e => e.preventDefault();
+    el.ondrop = () => dropPlayer(id);
   });
 
-  Object.values(players).forEach(p => {
+  Object.values(players).forEach(p=>{
     const div = document.createElement("div");
-    div.className = "player";
+    div.className="player";
     div.innerText = `${p.name} (${p.needs.length})`;
+    div.draggable = true;
 
-    div.onclick = () => cycleGroup(p);
+    div.ondragstart = () => draggedPlayer = p;
+
+    // tooltip
+    div.onmouseenter = e => showTooltip(e, p);
+    div.onmouseleave = hideTooltip;
 
     document.getElementById(p.group).appendChild(div);
   });
 }
 
-// --------------------
-// MOVE PLAYER
-function cycleGroup(player) {
-  if (player.group === "unassigned") player.group = "group1";
-  else if (player.group === "group1") player.group = "group2";
-  else player.group = "unassigned";
-
-  renderPlayers();
+// ---------------- DRAG DROP
+function dropPlayer(group) {
+  if (!draggedPlayer) return;
+  draggedPlayer.group = group;
+  renderAll();
 }
 
-// --------------------
-// SUMMARY
-function renderSummary() {
+// ---------------- TOOLTIP
+function showTooltip(e, player) {
+  const tooltip = document.getElementById("tooltip");
+  tooltip.innerHTML = player.needs.length
+    ? player.needs.join("<br>")
+    : "No needed items";
+
+  tooltip.style.left = e.pageX + 10 + "px";
+  tooltip.style.top = e.pageY + 10 + "px";
+  tooltip.style.display = "block";
+}
+
+function hideTooltip() {
+  document.getElementById("tooltip").style.display = "none";
+}
+
+// ---------------- SUMMARY
+function buildSummary(groupName) {
   const summary = {};
 
-  allData.forEach(d => {
-    if (d.status === "Need") {
-      if (!summary[d.item]) summary[d.item] = [];
-      summary[d.item].push(d.player);
-    }
-  });
+  Object.values(players)
+    .filter(p => p.group === groupName)
+    .forEach(p=>{
+      p.needs.forEach(item=>{
+        if (!summary[item]) summary[item] = [];
+        summary[item].push(p.name);
+      });
+    });
 
-  const container = document.getElementById("summary");
-  container.innerHTML = "";
+  return summary;
+}
+
+function renderSummary(containerId, summary) {
+  const container = document.getElementById(containerId);
+  container.innerHTML="";
 
   Object.entries(summary)
-    .sort((a,b) => b[1].length - a[1].length)
-    .forEach(([item, players]) => {
-
+    .sort((a,b)=>b[1].length - a[1].length)
+    .forEach(([item, list])=>{
       const div = document.createElement("div");
-      div.className = "item";
-
-      const highlight = players.length >= 3 ? "highlight" : "";
+      const highlight = list.length >= 3 ? "highlight":"";
 
       div.innerHTML = `
-        <strong class="${highlight}">${item}</strong> (${players.length})
-        <br>
-        ${players.join(", ")}
+        <strong class="${highlight}">${item}</strong> (${list.length})
+        <br>${list.join(", ")}
       `;
-
       container.appendChild(div);
     });
 }
 
-// --------------------
+function renderSummaries() {
+  renderSummary("summary1", buildSummary("group1"));
+  renderSummary("summary2", buildSummary("group2"));
+}
+
+// ----------------
 loadData();
 
 </script>
