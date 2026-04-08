@@ -2,89 +2,128 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Raid Planner - Loot Optimizer</title>
+<title>Raid Planner - WoWHead Tooltips</title>
 <style>
-body { background:#0f0f0f; color:#fff; font-family:Arial; padding:20px; }
-.container { display:flex; gap:20px; }
+body {
+  background:#0f0f0f;
+  color:#fff;
+  font-family: Arial;
+  padding:20px;
+}
+.container {
+  display:flex;
+  gap:20px;
+}
+
+/* GROUPS */
 .groups { flex:1; }
 .group {
-  background:#111; padding:10px; margin-bottom:20px; border:1px solid #333; min-height:200px;
+  background:#111;
+  padding:10px;
+  margin-bottom:20px;
+  border:1px solid #333;
+  min-height:200px;
 }
-.player { padding:5px; margin:3px 0; background:#222; cursor:grab; }
-.summary { width:400px; display:flex; flex-direction:column; gap:10px; }
-.panel { background:#111; padding:10px; border:1px solid #333; }
+.player {
+  padding:5px;
+  margin:3px 0;
+  background:#222;
+  cursor:grab;
+}
+
+/* SUMMARY */
+.summary {
+  width:400px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.panel {
+  background:#111;
+  padding:10px;
+  border:1px solid #333;
+}
 .item strong { color:#a335ee; }
 .highlight { color:#ff5555; }
+
+/* TOOLTIP */
 .tooltip {
-  position:absolute; background:#000; border:1px solid #555; padding:6px; font-size:12px; display:none; z-index:100;
+  position:absolute;
+  background:#000;
+  border:1px solid #555;
+  padding:6px;
+  font-size:12px;
+  display:none;
+  z-index:100;
 }
-button { margin-bottom:10px; padding:5px 10px; cursor:pointer; }
 </style>
 </head>
 <body>
 
-<h1>Raid Planner - Loot Optimizer</h1>
-<button onclick="autoOptimize()">Auto-Optimize Loot Groups</button>
+<h1>Raid Planner</h1>
 
 <div class="container">
+
   <div class="groups">
     <h2>Unassigned</h2>
     <div id="unassigned" class="group"></div>
+
     <h2>Group 1</h2>
     <div id="group1" class="group"></div>
+
     <h2>Group 2</h2>
     <div id="group2" class="group"></div>
   </div>
+
   <div class="summary">
-    <div class="panel"><h3>Group 1 Needs</h3><div id="summary1"></div></div>
-    <div class="panel"><h3>Group 2 Needs</h3><div id="summary2"></div></div>
+    <div class="panel">
+      <h3>Group 1 Needs</h3>
+      <div id="summary1"></div>
+    </div>
+    <div class="panel">
+      <h3>Group 2 Needs</h3>
+      <div id="summary2"></div>
+    </div>
   </div>
+
 </div>
 
 <div id="tooltip" class="tooltip"></div>
 
+<!-- WoWHead Tooltips -->
+<script src="https://wow.zamimg.com/widgets/power.js"></script>
+
 <script>
-// ---------------- BIS ITEMS WITH WOWHEAD LINKS
-const BIS_ITEMS = {
-  "Gloves of Dexterous Manipulation":28506,
-  "Handwraps of Flowing Thought":28507,
+// ---------------- CSV URL ----------------
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+
+// Optional: Map item names → WoWHead IDs
+const itemIDs = {
+  "Gloves of Dexterous Manipulation": 28506,
+  "Handwraps of Flowing Thought": 28507,
   "Vambraces of Courage":28502,
   "Gauntlets of Renewed Hope":28505,
   "Worgen Claw Necklace":28509,
-  "Gloves of Saintly Blessings":28508,
-  "Edgewalker's Longboots":28545,
-  "Crimson Girdle of The Indomitable":28566,
-  "Boots of Valiance":28569,
-  "Brooch of Unquenchable Fury":28530,
-  "Barbed Choker of Discipline":28516,
-  "Iron Gauntlets of the Maiden":28518,
-  "Gloves of Centering":28520,
-  "Mitts of the Treemender":28521,
-  "Boots of Foretelling":28517,
-  "Bracers of Maliciousness":28514,
-  "Trial-Fire Trousers":28594,
-  "Ribbon of Sacrifice":28590,
-  "Ruby Slippers":28585,
-  "Blue Diamond Witchwand":28588,
-  "Earthsoul Leggings":28591
-  // Add remaining BIS items here...
+  "Gloves of Saintly Blessings":28508
+  // Add all BIS items with their IDs
 };
 
-// ---------------- DATA
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
-let allData = [], players = {}, draggedPlayer = null;
+let allData = [];
+let players = {};
+let draggedPlayer = null;
 
-// ---------------- CSV PARSER
+// ---------------- CSV PARSER ----------------
 function parseCSV(text) {
   const rows = [];
   const lines = text.split("\n");
   for (let line of lines) {
     const cols = [];
-    let current = "", insideQuotes = false;
+    let current = "";
+    let insideQuotes = false;
     for (let char of line) {
       if (char === '"') insideQuotes = !insideQuotes;
       else if (char === ',' && !insideQuotes) { cols.push(current); current=""; }
-      else current += char;
+      else current+=char;
     }
     cols.push(current);
     rows.push(cols.map(c=>c.trim().replace(/^"|"$/g,"")));
@@ -92,7 +131,7 @@ function parseCSV(text) {
   return rows;
 }
 
-// ---------------- LOAD DATA
+// ---------------- LOAD DATA ----------------
 async function loadData() {
   const res = await fetch(CSV_URL);
   const text = await res.text();
@@ -103,93 +142,111 @@ async function loadData() {
   const statusIndex = headers.findIndex(h=>h.toLowerCase().includes("status"));
 
   rows.slice(1).forEach(cols=>{
-    const player = cols[playerIndex]; if(!player) return;
-    const item = cols[itemIndex]; const status = cols[statusIndex];
-    if(!players[player]) players[player]={name:player, group:"unassigned", needs:[]};
-    if(status==="Need") players[player].needs.push(item);
-    allData.push({player, item, status});
+    const player = cols[playerIndex];
+    const item = cols[itemIndex];
+    const status = cols[statusIndex];
+    if (!player) return;
+
+    if (!players[player]) players[player]={name:player, group:"unassigned", needs:[]};
+    if (status==="Need") players[player].needs.push(item);
+    allData.push({player,item,status});
   });
+
   renderAll();
 }
 
-// ---------------- RENDER PLAYERS
+// ---------------- RENDER ----------------
+function renderAll() {
+  renderPlayers();
+  renderSummaries();
+}
+
+// ---------------- PLAYERS ----------------
 function renderPlayers() {
   ["unassigned","group1","group2"].forEach(id=>{
     const el=document.getElementById(id);
-    el.innerHTML=""; el.ondragover=e=>e.preventDefault(); el.ondrop=()=>dropPlayer(id);
+    el.innerHTML="";
+    el.ondragover=e=>e.preventDefault();
+    el.ondrop=()=>dropPlayer(id);
   });
+
   Object.values(players).forEach(p=>{
     const div=document.createElement("div");
-    div.className="player"; div.innerText=`${p.name} (${p.needs.length})`; div.draggable=true;
+    div.className="player";
+    div.innerText = `${p.name} (${p.needs.length})`;
+    div.draggable=true;
+
     div.ondragstart=()=>draggedPlayer=p;
-    div.onmouseenter=e=>showTooltip(e,p); div.onmouseleave=hideTooltip;
+
+    div.onmouseenter=e=>showTooltip(e,p);
+    div.onmouseleave=hideTooltip;
+
     document.getElementById(p.group).appendChild(div);
   });
 }
 
-// ---------------- TOOLTIP
-function showTooltip(e,p){
+// ---------------- DRAG DROP ----------------
+function dropPlayer(group) {
+  if(!draggedPlayer) return;
+  draggedPlayer.group = group;
+  renderAll();
+}
+
+// ---------------- TOOLTIP ----------------
+function showTooltip(e,player){
   const tooltip=document.getElementById("tooltip");
-  tooltip.innerHTML = p.needs.map(i=>{
-    const id = BIS_ITEMS[i]; return id ? `<a href="https://www.wowhead.com/item=${id}" target="_blank">${i}</a>`:i;
-  }).join("<br>") || "No needed items";
+  tooltip.innerHTML = player.needs.length ? player.needs.join("<br>") : "No needed items";
   tooltip.style.left = e.pageX + 10 + "px";
   tooltip.style.top = e.pageY + 10 + "px";
   tooltip.style.display="block";
 }
 function hideTooltip(){document.getElementById("tooltip").style.display="none";}
 
-// ---------------- DRAG & DROP
-function dropPlayer(group){ if(!draggedPlayer)return; draggedPlayer.group=group; renderAll(); }
-
-// ---------------- SUMMARY
+// ---------------- SUMMARY ----------------
 function buildSummary(groupName){
   const summary={};
-  Object.values(players).filter(p=>p.group===groupName).forEach(p=>{
-    p.needs.forEach(i=>{ if(!summary[i])summary[i]=[]; summary[i].push(p.name); });
-  });
+  Object.values(players)
+    .filter(p=>p.group===groupName)
+    .forEach(p=>{
+      p.needs.forEach(item=>{
+        if(!summary[item]) summary[item]=[];
+        summary[item].push(p.name);
+      });
+    });
   return summary;
 }
+
 function renderSummary(containerId, summary){
   const container=document.getElementById(containerId);
   container.innerHTML="";
-  Object.entries(summary).sort((a,b)=>b[1].length - a[1].length).forEach(([item,list])=>{
-    const div=document.createElement("div"); const highlight=list.length>=3?"highlight":"";
-    div.innerHTML=`<strong class="${highlight}">${item}</strong> (${list.length})<br>${list.join(", ")}`;
-    container.appendChild(div);
-  });
-}
-function renderSummaries(){ renderSummary("summary1",buildSummary("group1")); renderSummary("summary2",buildSummary("group2")); }
+  Object.entries(summary)
+    .sort((a,b)=>b[1].length - a[1].length)
+    .forEach(([item,list])=>{
+      const div=document.createElement("div");
+      const highlight = list.length>=3 ? "highlight":"";
+      const id = itemIDs[item]||0;
 
-// ---------------- AUTO-OPTIMIZE (Loot Only)
-function autoOptimize(){
-  // reset groups
-  Object.values(players).forEach(p=>p.group="unassigned");
-  const allPlayers=Object.values(players);
-  const group1=[], group2=[];
-
-  while(group1.length<10 || group2.length<10){
-    allPlayers.sort((a,b)=>{
-      const g1ConflictA = a.needs.filter(i=>group1.some(p=>p.needs.includes(i))).length;
-      const g2ConflictA = a.needs.filter(i=>group2.some(p=>p.needs.includes(i))).length;
-      const g1ConflictB = b.needs.filter(i=>group1.some(p=>p.needs.includes(i))).length;
-      const g2ConflictB = b.needs.filter(i=>group2.some(p=>p.needs.includes(i))).length;
-      const minA=Math.min(g1ConflictA,g2ConflictA), minB=Math.min(g1ConflictB,g2ConflictB);
-      return minA-minB;
+      div.innerHTML = `
+        <a href="https://www.wowhead.com/tbc/item=${id}" 
+           data-wowhead="item=${id}" target="_blank">
+          <strong class="${highlight}">${item}</strong>
+        </a> (${list.length})
+        <br>${list.join(", ")}
+      `;
+      container.appendChild(div);
     });
-    const p = allPlayers.shift();
-    if(group1.length<10 && p.needs.filter(i=>group1.some(pl=>pl.needs.includes(i))).length <= p.needs.filter(i=>group2.some(pl=>pl.needs.includes(i))).length){
-      group1.push(p); p.group="group1";
-    } else { group2.push(p); p.group="group2"; }
-  }
-  renderAll();
+
+  if(window.$WowheadPower) $WowheadPower.refreshLinks();
 }
 
-// ---------------- RENDER ALL
-function renderAll(){ renderPlayers(); renderSummaries(); }
+function renderSummaries(){
+  renderSummary("summary1", buildSummary("group1"));
+  renderSummary("summary2", buildSummary("group2"));
+}
 
-// ---------------- INIT
+// ---------------- INIT ----------------
 loadData();
+
 </script>
 
 </body>
