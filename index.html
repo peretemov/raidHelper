@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Raid Planner - WoWHead Tooltips</title>
+<title>Raid Planner - Enhanced</title>
+
 <style>
 body {
   background:#0f0f0f;
@@ -10,6 +11,7 @@ body {
   font-family: Arial;
   padding:20px;
 }
+
 .container {
   display:flex;
   gap:20px;
@@ -24,11 +26,41 @@ body {
   border:1px solid #333;
   min-height:200px;
 }
+
+/* PLAYER */
 .player {
   padding:5px;
-  margin:3px 0;
+  margin:5px 0;
   background:#222;
   cursor:grab;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+
+/* LOOT COLORS */
+.player.low { background:#1f3d1f; }
+.player.medium { background:#4a3a1f; }
+.player.high { background:#4a1f1f; }
+.player.none { background:#2a2a2a; }
+
+/* CLASS COLORS */
+.warrior { border-left:4px solid #C79C6E; }
+.mage { border-left:4px solid #69CCF0; }
+.priest { border-left:4px solid #FFFFFF; }
+.druid { border-left:4px solid #FF7D0A; }
+.rogue { border-left:4px solid #FFF569; }
+.hunter { border-left:4px solid #ABD473; }
+.shaman { border-left:4px solid #0070DE; }
+.paladin { border-left:4px solid #F58CBA; }
+.warlock { border-left:4px solid #9482C9; }
+.unknown { border-left:4px solid #555; }
+
+/* SPEC ICON */
+.spec-icon {
+  width:20px;
+  height:20px;
 }
 
 /* SUMMARY */
@@ -43,9 +75,8 @@ body {
   padding:10px;
   border:1px solid #333;
 }
-/* ITEM COLORS */
-.summary a strong { color:#a335ee; } /* default purple */
-.summary a .highlight { color:#ff5555; } /* red when 3+ players need same item */
+.summary a strong { color:#a335ee; }
+.summary a .highlight { color:#ff5555; }
 
 /* TOOLTIP */
 .tooltip {
@@ -55,10 +86,10 @@ body {
   padding:6px;
   font-size:12px;
   display:none;
-  z-index:100;
 }
 </style>
 </head>
+
 <body>
 
 <h1>Raid Planner</h1>
@@ -91,118 +122,71 @@ body {
 
 <div id="tooltip" class="tooltip"></div>
 
-<!-- WoWHead Tooltips -->
 <script src="https://wow.zamimg.com/widgets/power.js"></script>
 
 <script>
-// ---------------- CSV URL ----------------
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
 
-// Optional: Map item names → WoWHead IDs
-const itemIDs = {
-  "Gloves of Dexterous Manipulation": 28506,
-  "Handwraps of Flowing Thought": 28507,
-  "Vambraces of Courage": 28502,
-  "Gauntlets of Renewed Hope": 28505,
-  "Worgen Claw Necklace": 28509,
-  "Gloves of Saintly Blessings": 28508,
-  "Edgewalker's Longboots": 28545,
-  "Crimson Girdle of The Indomitable": 28566,
-  "Boots of Valiance": 28569,
-  "Brooch of Unquenchable Fury": 28530,
-  "Barbed Choker of Discipline": 28516,
-  "Iron Gauntlets of the Maiden": 28518,
-  "Gloves of Centering": 28520,
-  "Mitts of the Treemender": 28521,
-  "Boots of Foretelling": 28517,
-  "Bracers of Maliciousness": 28514,
-  "Trial-Fire Trousers": 28594,
-  "Ribbon of Sacrifice": 28590,
-  "Ruby Slippers": 28585,
-  "Blue Diamond Witchwand": 28588,
-  "Earthsoul Leggings": 28591,
-  "Gloves of the Fallen Hero": 29756,
-  "Gloves of the Fallen Champion": 29757,
-  "Gloves of the Fallen Defender": 29758,
-  "Garona's Signet Ring": 28649,
-  "Wrynn Dynasty Greaves": 28621,
-  "Drape of the Dark Reavers": 28672,
-  "Boots of the Incorrupt": 28663,
-  "Tirisfal Wand of Ascendancy": 28673,
-  "Gilded Thorium Cloak": 28660,
-  "The Lighting Capacitor": 28785,
-  "Cincture of Will": 28652,
-  "Cord of Nature's Sustenance": 28655,
-  "Terestian's Stranglestaff": 28658,
-  "Pantaloons of Repentance": 28742,
-  "Skulker's Greaves": 28741,
-  "Mithril Band of the Unscarred": 28730,
-  "Jewel of Infinite Posibilities": 28734,
-  "Spiteblade": 28729,
-  "Ring of Recurrence": 28753,
-  "Bladed Shoulderpads of the Merciless": 28755,
-  "Girdle of Treachery": 28750,
-  "Forestlord Striders": 28752,
-  "Fiend Slayer Boots": 28746,
-  "King's Defender": 28749,
-  "Helm of the Fallen Hero": 29759,
-  "Helm of the Fallen Champion": 29760,
-  "Helm of the Fallen Defender": 29761,
-  "Ruby Drape of the Mysticant": 28766,
-  "Stainless Cloak of the Pure Hearted": 28765,
-  "Ring of a Thousand Marks": 28757,
-  "Jade Ring of the Everliving": 28763,
-  "Sunfury Bow of the Phoenix": 28772,
-  "The Decapitator": 28767,
-  "Light's Justice": 28771,
-  "Nathrezim Mindblade": 28770,
-  "Emberspur Talisman": 28609,
-  "Panzar'Thar Breastplate": 28597,
-  "Ironstriders of Urgency": 28608
+// ---------------- CSV ----------------
+const CSV_URL = "YOUR_GOOGLE_SHEET_URL";
+
+// ---------------- SPEC ICONS ----------------
+const specIcons = {
+  "mage-arcane": "https://wow.zamimg.com/images/wow/icons/small/spell_holy_magicalsentry.jpg",
+  "mage-fire": "https://wow.zamimg.com/images/wow/icons/small/spell_fire_firebolt02.jpg",
+  "mage-frost": "https://wow.zamimg.com/images/wow/icons/small/spell_frost_frostbolt02.jpg",
+
+  "warrior-arms": "https://wow.zamimg.com/images/wow/icons/small/ability_warrior_savageblow.jpg",
+  "warrior-fury": "https://wow.zamimg.com/images/wow/icons/small/ability_warrior_innerrage.jpg",
+  "warrior-protection": "https://wow.zamimg.com/images/wow/icons/small/ability_warrior_defensivestance.jpg",
+
+  "priest-holy": "https://wow.zamimg.com/images/wow/icons/small/spell_holy_wordfortitude.jpg",
+  "priest-shadow": "https://wow.zamimg.com/images/wow/icons/small/spell_shadow_shadowwordpain.jpg",
+
+  "druid-resto": "https://wow.zamimg.com/images/wow/icons/small/spell_nature_healingtouch.jpg",
+  "druid-feral": "https://wow.zamimg.com/images/wow/icons/small/ability_druid_catform.jpg",
+  "druid-balance": "https://wow.zamimg.com/images/wow/icons/small/spell_nature_starfall.jpg"
 };
 
-let allData = [];
+// ---------------- DATA ----------------
 let players = {};
 let draggedPlayer = null;
 
 // ---------------- CSV PARSER ----------------
 function parseCSV(text) {
-  const rows = [];
-  const lines = text.split("\n");
-  for (let line of lines) {
-    const cols = [];
-    let current = "";
-    let insideQuotes = false;
-    for (let char of line) {
-      if (char === '"') insideQuotes = !insideQuotes;
-      else if (char === ',' && !insideQuotes) { cols.push(current); current=""; }
-      else current+=char;
-    }
-    cols.push(current);
-    rows.push(cols.map(c=>c.trim().replace(/^"|"$/g,"")));
-  }
+  const rows = text.split("\n").map(r => r.split(","));
   return rows;
 }
 
-// ---------------- LOAD DATA ----------------
+// ---------------- LOAD ----------------
 async function loadData() {
   const res = await fetch(CSV_URL);
   const text = await res.text();
   const rows = parseCSV(text);
+
   const headers = rows[0];
+
   const playerIndex = headers.findIndex(h=>h.toLowerCase().includes("name"));
-  const itemIndex   = headers.findIndex(h=>h.toLowerCase().includes("item"));
+  const itemIndex = headers.findIndex(h=>h.toLowerCase().includes("item"));
   const statusIndex = headers.findIndex(h=>h.toLowerCase().includes("status"));
 
   rows.slice(1).forEach(cols=>{
     const player = cols[playerIndex];
     const item = cols[itemIndex];
     const status = cols[statusIndex];
+
     if (!player) return;
 
-    if (!players[player]) players[player]={name:player, group:"unassigned", needs:[]};
-    if (status==="Need") players[player].needs.push(item);
-    allData.push({player,item,status});
+    if (!players[player]) {
+      players[player] = {
+        name: player,
+        group: "unassigned",
+        needs: [],
+        class: "unknown",
+        spec: ""
+      };
+    }
+
+    if (status === "Need") players[player].needs.push(item);
   });
 
   renderAll();
@@ -225,20 +209,88 @@ function renderPlayers() {
 
   Object.values(players).forEach(p=>{
     const div=document.createElement("div");
-    div.className="player";
-    div.innerText = `${p.name} (${p.needs.length})`;
+
+    let tier="none";
+    if (p.needs.length<=2) tier="low";
+    else if (p.needs.length<=4) tier="medium";
+    else tier="high";
+
+    const className = p.class.toLowerCase();
+
+    div.className = `player ${tier} ${className}`;
+
+    // name
+    const name = document.createElement("span");
+    name.innerText = `${p.name} (${p.needs.length})`;
+
+    // spec icon
+    const icon = document.createElement("img");
+    icon.className="spec-icon";
+
+    const key = `${p.class}-${p.spec}`.toLowerCase();
+    if (specIcons[key]) icon.src = specIcons[key];
+    else icon.style.display="none";
+
+    // class select
+    const classSelect = document.createElement("select");
+    classSelect.innerHTML = `
+      <option value="unknown">Class</option>
+      <option value="warrior">Warrior</option>
+      <option value="mage">Mage</option>
+      <option value="priest">Priest</option>
+      <option value="druid">Druid</option>
+      <option value="rogue">Rogue</option>
+      <option value="hunter">Hunter</option>
+      <option value="shaman">Shaman</option>
+      <option value="paladin">Paladin</option>
+      <option value="warlock">Warlock</option>
+    `;
+    classSelect.value = p.class;
+
+    classSelect.onchange = (e)=>{
+      p.class = e.target.value;
+      p.spec = "";
+      renderPlayers();
+    };
+
+    // spec select
+    const specSelect = document.createElement("select");
+
+    const specOptions = {
+      mage:["arcane","fire","frost"],
+      warrior:["arms","fury","protection"],
+      priest:["holy","shadow"],
+      druid:["resto","feral","balance"]
+    };
+
+    const specs = specOptions[p.class] || [];
+
+    specSelect.innerHTML = `<option value="">Spec</option>` +
+      specs.map(s=>`<option value="${s}">${s}</option>`).join("");
+
+    specSelect.value = p.spec;
+
+    specSelect.onchange = (e)=>{
+      p.spec = e.target.value;
+      renderPlayers();
+    };
+
+    // drag + tooltip
     div.draggable=true;
-
     div.ondragstart=()=>draggedPlayer=p;
-
     div.onmouseenter=e=>showTooltip(e,p);
     div.onmouseleave=hideTooltip;
+
+    div.appendChild(icon);
+    div.appendChild(name);
+    div.appendChild(classSelect);
+    div.appendChild(specSelect);
 
     document.getElementById(p.group).appendChild(div);
   });
 }
 
-// ---------------- DRAG DROP ----------------
+// ---------------- DRAG ----------------
 function dropPlayer(group) {
   if(!draggedPlayer) return;
   draggedPlayer.group = group;
@@ -246,50 +298,36 @@ function dropPlayer(group) {
 }
 
 // ---------------- TOOLTIP ----------------
-function showTooltip(e,player){
-  const tooltip=document.getElementById("tooltip");
-  tooltip.innerHTML = player.needs.length ? player.needs.join("<br>") : "No needed items";
-  tooltip.style.left = e.pageX + 10 + "px";
-  tooltip.style.top = e.pageY + 10 + "px";
-  tooltip.style.display="block";
+function showTooltip(e,p){
+  const t=document.getElementById("tooltip");
+  t.innerHTML = p.needs.join("<br>");
+  t.style.left=e.pageX+10+"px";
+  t.style.top=e.pageY+10+"px";
+  t.style.display="block";
 }
 function hideTooltip(){document.getElementById("tooltip").style.display="none";}
 
 // ---------------- SUMMARY ----------------
-function buildSummary(groupName){
+function buildSummary(group){
   const summary={};
-  Object.values(players)
-    .filter(p=>p.group===groupName)
-    .forEach(p=>{
-      p.needs.forEach(item=>{
-        if(!summary[item]) summary[item]=[];
-        summary[item].push(p.name);
-      });
+  Object.values(players).filter(p=>p.group===group).forEach(p=>{
+    p.needs.forEach(i=>{
+      if(!summary[i]) summary[i]=[];
+      summary[i].push(p.name);
     });
+  });
   return summary;
 }
 
-function renderSummary(containerId, summary){
-  const container=document.getElementById(containerId);
-  container.innerHTML="";
-  Object.entries(summary)
-    .sort((a,b)=>b[1].length - a[1].length)
-    .forEach(([item,list])=>{
-      const div=document.createElement("div");
-      const highlightClass = list.length >= 3 ? "highlight" : "";
-      const id = itemIDs[item]||0;
-
-      div.innerHTML = `
-        <a href="https://www.wowhead.com/tbc/item=${id}" 
-           data-wowhead="item=${id}" target="_blank">
-          <strong class="${highlightClass}">${item}</strong>
-        </a> (${list.length})
-        <br>${list.join(", ")}
-      `;
-      container.appendChild(div);
-    });
-
-  if(window.$WowheadPower) $WowheadPower.refreshLinks();
+function renderSummary(id,summary){
+  const el=document.getElementById(id);
+  el.innerHTML="";
+  Object.entries(summary).forEach(([item,list])=>{
+    const div=document.createElement("div");
+    const red = list.length>=3 ? "highlight":"";
+    div.innerHTML = `<strong class="${red}">${item}</strong> (${list.length})<br>${list.join(", ")}`;
+    el.appendChild(div);
+  });
 }
 
 function renderSummaries(){
