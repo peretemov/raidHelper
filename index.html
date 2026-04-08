@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Raid Planner</title>
+<style>
+body {
+  background:#0f0f0f;
+  color:#fff;
+  font-family: Arial;
+  padding:20px;
+}
+.container {
+  display:flex;
+  gap:20px;
+}
+.groups { flex:1; }
+.group {
+  background:#111;
+  padding:10px;
+  margin-bottom:20px;
+  border:1px solid #333;
+  min-height:200px;
+}
+.player {
+  padding:5px;
+  margin:3px 0;
+  background:#222;
+  cursor:pointer;
+}
+.summary {
+  width:350px;
+  background:#111;
+  padding:10px;
+  border:1px solid #333;
+}
+.item { margin-bottom:10px; }
+.item strong { color:#a335ee; }
+.highlight { color:#ff5555; }
+</style>
+</head>
+<body>
+
+<h1>Raid Planner</h1>
+
+<div class="container">
+  <div class="groups">
+    <h2>Unassigned</h2>
+    <div id="unassigned" class="group"></div>
+
+    <h2>Group 1</h2>
+    <div id="group1" class="group"></div>
+
+    <h2>Group 2</h2>
+    <div id="group2" class="group"></div>
+  </div>
+
+  <div class="summary">
+    <h2>Items Needed</h2>
+    <div id="summary"></div>
+  </div>
+</div>
+
+<script>
+
+// 🔹 YOUR CSV
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+
+let allData = [];
+let players = {};
+
+// --------------------
+// PROPER CSV PARSER
+function parseCSV(text) {
+  const rows = [];
+  const lines = text.split("\n");
+
+  for (let line of lines) {
+    const cols = [];
+    let current = "";
+    let insideQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === '"') {
+        insideQuotes = !insideQuotes;
+      } else if (char === ',' && !insideQuotes) {
+        cols.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    cols.push(current);
+    rows.push(cols.map(c => c.trim().replace(/^"|"$/g, "")));
+  }
+
+  return rows;
+}
+
+// --------------------
+// LOAD DATA
+async function loadData() {
+  const res = await fetch(CSV_URL);
+  const text = await res.text();
+
+  console.log("RAW CSV:", text);
+
+  const rows = parseCSV(text);
+
+  const headers = rows[0];
+  console.log("HEADERS:", headers);
+
+  // 🔍 Auto-detect columns
+  const playerIndex = headers.findIndex(h => h.toLowerCase().includes("name"));
+  const itemIndex   = headers.findIndex(h => h.toLowerCase().includes("item"));
+  const statusIndex = headers.findIndex(h => h.toLowerCase().includes("status"));
+
+  console.log({playerIndex, itemIndex, statusIndex});
+
+  if (playerIndex === -1 || itemIndex === -1 || statusIndex === -1) {
+    alert("Column detection failed. Check your form headers.");
+    return;
+  }
+
+  rows.slice(1).forEach(cols => {
+    const player = cols[playerIndex]?.trim();
+    const item   = cols[itemIndex]?.trim();
+    const status = cols[statusIndex]?.trim();
+
+    if (!player) return;
+
+    if (!players[player]) {
+      players[player] = {
+        name: player,
+        group: "unassigned",
+        needs: []
+      };
+    }
+
+    if (status === "Need") {
+      players[player].needs.push(item);
+    }
+
+    allData.push({player, item, status});
+  });
+
+  console.log("PARSED DATA:", allData);
+
+  renderPlayers();
+  renderSummary();
+}
+
+// --------------------
+// RENDER PLAYERS
+function renderPlayers() {
+  ["unassigned", "group1", "group2"].forEach(g => {
+    document.getElementById(g).innerHTML = "";
+  });
+
+  Object.values(players).forEach(p => {
+    const div = document.createElement("div");
+    div.className = "player";
+    div.innerText = `${p.name} (${p.needs.length})`;
+
+    div.onclick = () => cycleGroup(p);
+
+    document.getElementById(p.group).appendChild(div);
+  });
+}
+
+// --------------------
+// MOVE PLAYER
+function cycleGroup(player) {
+  if (player.group === "unassigned") player.group = "group1";
+  else if (player.group === "group1") player.group = "group2";
+  else player.group = "unassigned";
+
+  renderPlayers();
+}
+
+// --------------------
+// SUMMARY
+function renderSummary() {
+  const summary = {};
+
+  allData.forEach(d => {
+    if (d.status === "Need") {
+      if (!summary[d.item]) summary[d.item] = [];
+      summary[d.item].push(d.player);
+    }
+  });
+
+  const container = document.getElementById("summary");
+  container.innerHTML = "";
+
+  Object.entries(summary)
+    .sort((a,b) => b[1].length - a[1].length)
+    .forEach(([item, players]) => {
+
+      const div = document.createElement("div");
+      div.className = "item";
+
+      const highlight = players.length >= 3 ? "highlight" : "";
+
+      div.innerHTML = `
+        <strong class="${highlight}">${item}</strong> (${players.length})
+        <br>
+        ${players.join(", ")}
+      `;
+
+      container.appendChild(div);
+    });
+}
+
+// --------------------
+loadData();
+
+</script>
+
+</body>
+</html>
