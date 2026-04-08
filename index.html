@@ -300,6 +300,128 @@ function renderSummaries(){
 // ---------------- INIT ----------------
 loadData();
 
+<script>
+// ---------------- CONFIG ----------------
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+const RAID_JSON_URL = "https://raid-helper.xyz/api/v4/events/1490979927376527471"; // local file or hosted
+
+// ---------------- HELPERS ----------------
+function normalizeName(name) {
+  return name.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function similarity(a, b) {
+  a = normalizeName(a);
+  b = normalizeName(b);
+
+  if (a === b) return 1;
+
+  let matches = 0;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] === b[i]) matches++;
+  }
+
+  return matches / Math.max(a.length, b.length);
+}
+
+function findBestMatch(name, raidNames) {
+  let best = null;
+  let bestScore = 0;
+
+  raidNames.forEach(rn => {
+    const score = similarity(name, rn);
+    if (score > bestScore) {
+      bestScore = score;
+      best = rn;
+    }
+  });
+
+  return bestScore > 0.7 ? best : null;
+}
+
+// ---------------- LOAD DATA ----------------
+async function loadAllData() {
+
+  // --- LOAD CSV (BIS)
+  const csvRes = await fetch(CSV_URL);
+  const csvText = await csvRes.text();
+  const rows = parseCSV(csvText);
+  const headers = rows[0];
+
+  const playerIndex = headers.findIndex(h=>h.toLowerCase().includes("name"));
+  const itemIndex   = headers.findIndex(h=>h.toLowerCase().includes("item"));
+  const statusIndex = headers.findIndex(h=>h.toLowerCase().includes("status"));
+
+  let bisPlayers = {};
+
+  rows.slice(1).forEach(cols=>{
+    const name = cols[playerIndex];
+    const item = cols[itemIndex];
+    const status = cols[statusIndex];
+    if (!name) return;
+
+    if (!bisPlayers[name]) {
+      bisPlayers[name] = { name, needs: [] };
+    }
+
+    if (status === "Need") {
+      bisPlayers[name].needs.push(item);
+    }
+  });
+
+  // --- LOAD RAID HELPER JSON
+  const raidRes = await fetch(RAID_JSON_URL);
+  const raidData = await raidRes.json();
+
+  // Adjust depending on structure
+  const signups = raidData.signups || raidData.data || [];
+
+  // Filter accepted players
+  const raidPlayers = signups
+    .filter(p => p.status === "accepted" || p.status === "confirmed")
+    .map(p => ({
+      name: p.name || p.username,
+      class: p.class || "unknown",
+      spec: p.spec || ""
+    }));
+
+  const raidNames = raidPlayers.map(p => p.name);
+
+  // ---------------- MERGE ----------------
+  let players = {};
+
+  Object.values(bisPlayers).forEach(bp => {
+    const match = findBestMatch(bp.name, raidNames);
+
+    if (!match) return; // skip non-raiders
+
+    const raidInfo = raidPlayers.find(r => r.name === match);
+
+    players[match] = {
+      name: match,
+      group: "unassigned",
+      needs: bp.needs,
+      class: raidInfo.class,
+      spec: raidInfo.spec
+    };
+  });
+
+  return players;
+}
+
+// ---------------- INIT ----------------
+let players = {};
+let draggedPlayer = null;
+
+async function init() {
+  players = await loadAllData();
+  renderAll();
+}
+
+init();
 </script>
 
 </body>
