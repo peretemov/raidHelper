@@ -2,48 +2,43 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Raid Planner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raid Planner - Merged System</title>
 <style>
-body { background:#0f0f0f; color:#fff; font-family: Arial; padding:20px; }
+body { background:#0f0f0f; color:#fff; font-family: Arial, sans-serif; padding:20px; }
+h1,h2 { color:#ffd100; }
 .container { display:flex; gap:20px; }
-
+/* Groups */
 .groups { flex:1; }
-.group {
-  background:#111;
-  padding:10px;
-  margin-bottom:20px;
-  border:1px solid #333;
-  min-height:200px;
-}
-.player {
-  padding:5px;
-  margin:3px 0;
-  background:#222;
-  cursor:grab;
-}
-
-.summary { width:400px; display:flex; flex-direction:column; gap:10px; }
-.panel { background:#111; padding:10px; border:1px solid #333; }
-
+.group { background:#111; padding:10px; margin-bottom:20px; border:1px solid #333; min-height:200px; }
+.player { padding:5px; margin:3px 0; background:#222; cursor:grab; color:#a335ee; }
+.player:hover { background:#333; }
+.player.dragging { opacity:0.5; }
+/* Summary */
+.summary { width:350px; background:#111; padding:10px; border:1px solid #333; }
+.item { margin-bottom:10px; }
 .item strong { color:#a335ee; }
 .highlight { color:#ff5555; }
-
-.tooltip {
-  position:absolute;
-  background:#000;
-  border:1px solid #555;
-  padding:6px;
+/* Tooltip */
+.player[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  background:#222;
+  color:#fff;
+  padding:4px 8px;
+  border-radius:4px;
   font-size:12px;
-  display:none;
-  z-index:100;
+  white-space: pre-line;
+  z-index:1000;
 }
 </style>
 </head>
 <body>
 
-<h1>Raid Planner</h1>
+<h1>Raid Planner - Merged System</h1>
 
 <div class="container">
+  <!-- GROUPS -->
   <div class="groups">
     <h2>Unassigned</h2>
     <div id="unassigned" class="group"></div>
@@ -55,208 +50,128 @@ body { background:#0f0f0f; color:#fff; font-family: Arial; padding:20px; }
     <div id="group2" class="group"></div>
   </div>
 
+  <!-- SUMMARY -->
   <div class="summary">
-    <div class="panel">
-      <h3>Group 1 Needs</h3>
-      <div id="summary1"></div>
-    </div>
-    <div class="panel">
-      <h3>Group 2 Needs</h3>
-      <div id="summary2"></div>
-    </div>
+    <h2>Items Needed</h2>
+    <div id="summary"></div>
   </div>
 </div>
 
-<div id="tooltip" class="tooltip"></div>
-
 <script>
+// ---------- CONFIG ----------
+// Replace these with your published CSV URLs
+const RAID_HELPER_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vREW76caK79cfWH77Rw_c4xaS11POYR3WxoBff0EW6_8njw36DQGqE3dSLZNYliAHKR1F7drFS6wpbS/pub?output=csv";
+const LOOT_CSV_URL        = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
 
-// 🔹 REPLACE THESE
-const LOOT_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
-const RAID_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vREW76caK79cfWH77Rw_c4xaS11POYR3WxoBff0EW6_8njw36DQGqE3dSLZNYliAHKR1F7drFS6wpbS/pub?output=csv";
+let players = {}; // {name:{name, cls, spec, loot:[], group}}
+let lootData = {}; // {item:[player1,player2,...]}
 
-let players = {};
-let draggedPlayer = null;
+// ---------- CSV HELPER ----------
+async function loadCSV(url) {
+  const res = await fetch(url);
+  const text = await res.text();
+  const rows = text.split("\n").map(r => r.split(","));
+  return rows;
+}
 
-// 🎨 Class colors
-const classColors = {
-  Warrior:"#C79C6E", Mage:"#69CCF0", Priest:"#FFFFFF",
-  Druid:"#FF7D0A", Rogue:"#FFF569", Hunter:"#ABD473",
-  Paladin:"#F58CBA", Shaman:"#0070DE", Warlock:"#9482C9"
-};
-
-// ---------------- CSV PARSER
-function parseCSV(text) {
-  return text.split("\n").map(line=>{
-    let cols=[],cur="",q=false;
-    for(let c of line){
-      if(c=='"') q=!q;
-      else if(c==','&&!q){cols.push(cur);cur="";}
-      else cur+=c;
-    }
-    cols.push(cur);
-    return cols.map(v=>v.trim().replace(/^"|"$/g,""));
+// ---------- LOAD DATA ----------
+async function loadData() {
+  // 1️⃣ Roster
+  const rosterRows = await loadCSV(RAID_HELPER_CSV_URL);
+  rosterRows.slice(1).forEach(cols => {
+    const name = cols[0]?.trim();
+    const cls  = cols[1]?.trim();
+    const spec = cols[2]?.trim();
+    const status = cols[4]?.trim(); // adjust index if needed
+    if (!name || !cls) return;
+    if (status.toLowerCase() === "absent" || status.toLowerCase() === "bench") return;
+    players[name] = { name, cls, spec, loot: [], group:"unassigned" };
   });
-}
 
-// ---------------- LOAD BOTH
-async function loadAll() {
-  const [lootRes, raidRes] = await Promise.all([
-    fetch(LOOT_CSV),
-    fetch(RAID_CSV)
-  ]);
-
-  const lootRows = parseCSV(await lootRes.text());
-  const raidRows = parseCSV(await raidRes.text());
-
-  buildRaidData(raidRows);
-  buildLootData(lootRows);
-
-  renderAll();
-}
-
-// ---------------- RAID DATA
-function buildRaidData(rows){
-  const headers = rows[0];
-
-  const nameI = headers.findIndex(h=>h.toLowerCase().includes("player") || h.toLowerCase().includes("name"));
-  const classI= headers.findIndex(h=>h.toLowerCase().includes("class"));
-  const specI = headers.findIndex(h=>h.toLowerCase().includes("spec"));
-  const statusI=headers.findIndex(h=>h.toLowerCase().includes("status"));
-
-  rows.slice(1).forEach(r=>{
-    const name=r[nameI];
-    const status=r[statusI];
-
-    if(!name) return;
-
-    // ❌ remove absent / not signed
-    if(status && !status.toLowerCase().includes("accept")) return;
-
-    players[name]={
-      name,
-      class:r[classI] || "Unknown",
-      spec:r[specI] || "",
-      group:"unassigned",
-      needs:[]
-    };
+  // 2️⃣ Loot
+  const lootRows = await loadCSV(LOOT_CSV_URL);
+  lootRows.slice(1).forEach(cols => {
+    const name = cols[0]?.trim();
+    const item = cols[1]?.trim();
+    const status = cols[2]?.trim();
+    if (!players[name]) return; // skip non-roster
+    if (status !== "Need") return;
+    players[name].loot.push(item);
+    if (!lootData[item]) lootData[item] = [];
+    lootData[item].push(name);
   });
-}
 
-// ---------------- LOOT DATA
-function buildLootData(rows){
-  const headers = rows[0];
-
-  const nameI = headers.findIndex(h=>h.toLowerCase().includes("name"));
-  const itemI = headers.findIndex(h=>h.toLowerCase().includes("item"));
-  const statusI=headers.findIndex(h=>h.toLowerCase().includes("status"));
-
-  rows.slice(1).forEach(r=>{
-    const name=r[nameI];
-    const item=r[itemI];
-    const status=r[statusI];
-
-    if(!players[name]) return; // ignore non-signed players
-
-    if(status==="Need"){
-      players[name].needs.push(item);
-    }
-  });
-}
-
-// ---------------- RENDER
-function renderAll(){
   renderPlayers();
-  renderSummaries();
+  renderSummary();
 }
 
-// ---------------- PLAYERS
-function renderPlayers(){
-  ["unassigned","group1","group2"].forEach(id=>{
-    const el=document.getElementById(id);
-    el.innerHTML="";
-    el.ondragover=e=>e.preventDefault();
-    el.ondrop=()=>dropPlayer(id);
-  });
+// ---------- RENDER ----------
+function renderPlayers() {
+  ["unassigned","group1","group2"].forEach(g => document.getElementById(g).innerHTML = "");
 
-  Object.values(players).forEach(p=>{
-    const div=document.createElement("div");
-    div.className="player";
-    div.innerText=`${p.name} (${p.needs.length})`;
-    div.style.color=classColors[p.class] || "#fff";
+  Object.values(players).forEach(p => {
+    const div = document.createElement("div");
+    div.className = "player";
+    div.draggable = true;
+    div.innerText = p.name + ` (${p.cls} ${p.spec})`;
+    if (p.loot.length > 0) div.dataset.tooltip = p.loot.join("\n");
 
-    div.draggable=true;
-    div.ondragstart=()=>draggedPlayer=p;
-
-    div.onmouseenter=e=>showTooltip(e,p);
-    div.onmouseleave=hideTooltip;
+    div.addEventListener("dragstart", e => { div.classList.add("dragging"); e.dataTransfer.setData("text/plain", p.name); });
+    div.addEventListener("dragend", e => { div.classList.remove("dragging"); });
 
     document.getElementById(p.group).appendChild(div);
   });
+
+  // Setup drop zones
+  ["unassigned","group1","group2"].forEach(id=>{
+    const zone = document.getElementById(id);
+    zone.addEventListener("dragover", e=> e.preventDefault());
+    zone.addEventListener("drop", e=>{
+      e.preventDefault();
+      const name = e.dataTransfer.getData("text/plain");
+      players[name].group = id;
+      renderPlayers();
+      renderSummary();
+    });
+  });
 }
 
-// ---------------- DRAG
-function dropPlayer(group){
-  if(!draggedPlayer) return;
-  draggedPlayer.group=group;
-  renderAll();
-}
+// ---------- SUMMARY ----------
+function renderSummary() {
+  const summary = { group1:{}, group2:{} };
 
-// ---------------- TOOLTIP
-function showTooltip(e,p){
-  const t=document.getElementById("tooltip");
-  t.innerHTML=`
-    <b>${p.name}</b><br>
-    ${p.class} ${p.spec}<br><br>
-    ${p.needs.join("<br>") || "No needed items"}
-  `;
-  t.style.left=e.pageX+10+"px";
-  t.style.top=e.pageY+10+"px";
-  t.style.display="block";
-}
-function hideTooltip(){
-  document.getElementById("tooltip").style.display="none";
-}
-
-// ---------------- SUMMARY
-function buildSummary(group){
-  const s={};
-  Object.values(players)
-    .filter(p=>p.group===group)
-    .forEach(p=>{
-      p.needs.forEach(item=>{
-        if(!s[item]) s[item]=[];
-        s[item].push(p.name);
+  Object.values(players).forEach(p => {
+    const g = p.group;
+    if (g === "group1" || g === "group2") {
+      p.loot.forEach(item => {
+        if (!summary[g][item]) summary[g][item] = [];
+        summary[g][item].push(p.name);
       });
-    });
-  return s;
+    }
+  });
+
+  const container = document.getElementById("summary");
+  container.innerHTML = "";
+
+  ["group1","group2"].forEach(g=>{
+    const header = document.createElement("h3");
+    header.innerText = `Items Needed - ${g}`;
+    container.appendChild(header);
+
+    Object.entries(summary[g])
+      .sort((a,b)=>b[1].length - a[1].length)
+      .forEach(([item, names])=>{
+        const div = document.createElement("div");
+        div.className = "item";
+        const highlight = names.length>=3 ? "highlight" : "";
+        div.innerHTML = `<strong class="${highlight}">${item}</strong> (${names.length})<br>${names.join(", ")}`;
+        container.appendChild(div);
+      });
+  });
 }
 
-function renderSummary(id,data){
-  const el=document.getElementById(id);
-  el.innerHTML="";
-
-  Object.entries(data)
-    .sort((a,b)=>b[1].length-a[1].length)
-    .forEach(([item,list])=>{
-      const div=document.createElement("div");
-      const h=list.length>=3?"highlight":"";
-      div.innerHTML=`
-        <strong class="${h}">${item}</strong> (${list.length})
-        <br>${list.join(", ")}
-      `;
-      el.appendChild(div);
-    });
-}
-
-function renderSummaries(){
-  renderSummary("summary1", buildSummary("group1"));
-  renderSummary("summary2", buildSummary("group2"));
-}
-
-// ----------------
-loadAll();
-
+// ---------- INIT ----------
+loadData();
 </script>
 
 </body>
