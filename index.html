@@ -43,8 +43,9 @@ body {
   padding:10px;
   border:1px solid #333;
 }
-.item strong { color:#a335ee; }
-.highlight { color:#ff5555; }
+/* ITEM COLORS */
+.summary a strong { color:#a335ee; } /* default purple */
+.summary a .highlight { color:#ff5555; } /* red when 3+ players need same item */
 
 /* TOOLTIP */
 .tooltip {
@@ -99,70 +100,51 @@ const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZW
 
 // Optional: Map item names → WoWHead IDs
 const itemIDs = {
-  // Karazhan: Attumen
   "Gloves of Dexterous Manipulation": 28506,
   "Handwraps of Flowing Thought": 28507,
   "Vambraces of Courage": 28502,
   "Gauntlets of Renewed Hope": 28505,
   "Worgen Claw Necklace": 28509,
   "Gloves of Saintly Blessings": 28508,
-
-  // Moroes
   "Edgewalker's Longboots": 28545,
   "Crimson Girdle of The Indomitable": 28566,
   "Boots of Valiance": 28569,
   "Brooch of Unquenchable Fury": 28530,
-
-  // Maiden of Virtue
   "Barbed Choker of Discipline": 28516,
   "Iron Gauntlets of the Maiden": 28518,
   "Gloves of Centering": 28520,
   "Mitts of the Treemender": 28521,
   "Boots of Foretelling": 28517,
   "Bracers of Maliciousness": 28514,
-
-  // Opera Event
   "Trial-Fire Trousers": 28594,
   "Ribbon of Sacrifice": 28590,
   "Ruby Slippers": 28585,
   "Blue Diamond Witchwand": 28588,
   "Earthsoul Leggings": 28591,
-
-  // Curator
   "Gloves of the Fallen Hero": 29756,
   "Gloves of the Fallen Champion": 29757,
   "Gloves of the Fallen Defender": 29758,
   "Garona's Signet Ring": 28649,
   "Wrynn Dynasty Greaves": 28621,
-
-  // Shade of Aran
   "Drape of the Dark Reavers": 28672,
   "Boots of the Incorrupt": 28663,
   "Tirisfal Wand of Ascendancy": 28673,
-
-  // Illhoof
   "Gilded Thorium Cloak": 28660,
   "The Lighting Capacitor": 28785,
   "Cincture of Will": 28652,
   "Cord of Nature's Sustenance": 28655,
   "Terestian's Stranglestaff": 28658,
-
-  // Netherspite
   "Pantaloons of Repentance": 28742,
   "Skulker's Greaves": 28741,
   "Mithril Band of the Unscarred": 28730,
   "Jewel of Infinite Posibilities": 28734,
   "Spiteblade": 28729,
-
-  // Chess Event
   "Ring of Recurrence": 28753,
   "Bladed Shoulderpads of the Merciless": 28755,
   "Girdle of Treachery": 28750,
   "Forestlord Striders": 28752,
   "Fiend Slayer Boots": 28746,
   "King's Defender": 28749,
-
-  // Prince Malchezaar
   "Helm of the Fallen Hero": 29759,
   "Helm of the Fallen Champion": 29760,
   "Helm of the Fallen Defender": 29761,
@@ -174,8 +156,6 @@ const itemIDs = {
   "The Decapitator": 28767,
   "Light's Justice": 28771,
   "Nathrezim Mindblade": 28770,
-
-  // Nightbane
   "Emberspur Talisman": 28609,
   "Panzar'Thar Breastplate": 28597,
   "Ironstriders of Urgency": 28608
@@ -296,13 +276,13 @@ function renderSummary(containerId, summary){
     .sort((a,b)=>b[1].length - a[1].length)
     .forEach(([item,list])=>{
       const div=document.createElement("div");
-      const highlight = list.length>=3 ? "highlight":"";
+      const highlightClass = list.length >= 3 ? "highlight" : "";
       const id = itemIDs[item]||0;
 
       div.innerHTML = `
         <a href="https://www.wowhead.com/tbc/item=${id}" 
            data-wowhead="item=${id}" target="_blank">
-          <strong class="${highlight}">${item}</strong>
+          <strong class="${highlightClass}">${item}</strong>
         </a> (${list.length})
         <br>${list.join(", ")}
       `;
