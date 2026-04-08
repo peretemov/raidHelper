@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Raid Planner</title>
+<title>Raid Planner - WoWHead Tooltips</title>
 <style>
 body {
   background:#0f0f0f;
@@ -90,165 +90,161 @@ body {
 
 <div id="tooltip" class="tooltip"></div>
 
-<script>
+<!-- WoWHead Tooltips -->
+<script src="https://wow.zamimg.com/widgets/power.js"></script>
 
+<script>
+// ---------------- CSV URL ----------------
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFTam90fBXpoZWYRvRRvCK6-WvB6pu9aGVlhYlzKTMYUiAYHr9VZ-S0Gtk5S0ZHT-8Mho_-kXT9H51/pub?output=csv";
+
+// Optional: Map item names → WoWHead IDs
+const itemIDs = {
+  "Gloves of Dexterous Manipulation": 28506,
+  "Handwraps of Flowing Thought": 28507,
+  "Vambraces of Courage":28502,
+  "Gauntlets of Renewed Hope":28505,
+  "Worgen Claw Necklace":28509,
+  "Gloves of Saintly Blessings":28508
+  // Add all BIS items with their IDs
+};
 
 let allData = [];
 let players = {};
 let draggedPlayer = null;
 
-// ---------------- CSV PARSER
+// ---------------- CSV PARSER ----------------
 function parseCSV(text) {
   const rows = [];
   const lines = text.split("\n");
-
   for (let line of lines) {
     const cols = [];
     let current = "";
     let insideQuotes = false;
-
     for (let char of line) {
       if (char === '"') insideQuotes = !insideQuotes;
-      else if (char === ',' && !insideQuotes) {
-        cols.push(current);
-        current = "";
-      } else current += char;
+      else if (char === ',' && !insideQuotes) { cols.push(current); current=""; }
+      else current+=char;
     }
     cols.push(current);
-
-    rows.push(cols.map(c => c.trim().replace(/^"|"$/g, "")));
+    rows.push(cols.map(c=>c.trim().replace(/^"|"$/g,"")));
   }
   return rows;
 }
 
-// ---------------- LOAD
+// ---------------- LOAD DATA ----------------
 async function loadData() {
   const res = await fetch(CSV_URL);
   const text = await res.text();
-
   const rows = parseCSV(text);
   const headers = rows[0];
+  const playerIndex = headers.findIndex(h=>h.toLowerCase().includes("name"));
+  const itemIndex   = headers.findIndex(h=>h.toLowerCase().includes("item"));
+  const statusIndex = headers.findIndex(h=>h.toLowerCase().includes("status"));
 
-  const playerIndex = headers.findIndex(h => h.toLowerCase().includes("name"));
-  const itemIndex   = headers.findIndex(h => h.toLowerCase().includes("item"));
-  const statusIndex = headers.findIndex(h => h.toLowerCase().includes("status"));
-
-  rows.slice(1).forEach(cols => {
+  rows.slice(1).forEach(cols=>{
     const player = cols[playerIndex];
-    const item   = cols[itemIndex];
+    const item = cols[itemIndex];
     const status = cols[statusIndex];
-
     if (!player) return;
 
-    if (!players[player]) {
-      players[player] = { name: player, group: "unassigned", needs: [] };
-    }
-
-    if (status === "Need") {
-      players[player].needs.push(item);
-    }
-
-    allData.push({player, item, status});
+    if (!players[player]) players[player]={name:player, group:"unassigned", needs:[]};
+    if (status==="Need") players[player].needs.push(item);
+    allData.push({player,item,status});
   });
 
   renderAll();
 }
 
-// ---------------- RENDER ALL
+// ---------------- RENDER ----------------
 function renderAll() {
   renderPlayers();
   renderSummaries();
 }
 
-// ---------------- PLAYERS
+// ---------------- PLAYERS ----------------
 function renderPlayers() {
   ["unassigned","group1","group2"].forEach(id=>{
-    const el = document.getElementById(id);
+    const el=document.getElementById(id);
     el.innerHTML="";
-    el.ondragover = e => e.preventDefault();
-    el.ondrop = () => dropPlayer(id);
+    el.ondragover=e=>e.preventDefault();
+    el.ondrop=()=>dropPlayer(id);
   });
 
   Object.values(players).forEach(p=>{
-    const div = document.createElement("div");
+    const div=document.createElement("div");
     div.className="player";
     div.innerText = `${p.name} (${p.needs.length})`;
-    div.draggable = true;
+    div.draggable=true;
 
-    div.ondragstart = () => draggedPlayer = p;
+    div.ondragstart=()=>draggedPlayer=p;
 
-    // tooltip
-    div.onmouseenter = e => showTooltip(e, p);
-    div.onmouseleave = hideTooltip;
+    div.onmouseenter=e=>showTooltip(e,p);
+    div.onmouseleave=hideTooltip;
 
     document.getElementById(p.group).appendChild(div);
   });
 }
 
-// ---------------- DRAG DROP
+// ---------------- DRAG DROP ----------------
 function dropPlayer(group) {
-  if (!draggedPlayer) return;
+  if(!draggedPlayer) return;
   draggedPlayer.group = group;
   renderAll();
 }
 
-// ---------------- TOOLTIP
-function showTooltip(e, player) {
-  const tooltip = document.getElementById("tooltip");
-  tooltip.innerHTML = player.needs.length
-    ? player.needs.join("<br>")
-    : "No needed items";
-
+// ---------------- TOOLTIP ----------------
+function showTooltip(e,player){
+  const tooltip=document.getElementById("tooltip");
+  tooltip.innerHTML = player.needs.length ? player.needs.join("<br>") : "No needed items";
   tooltip.style.left = e.pageX + 10 + "px";
   tooltip.style.top = e.pageY + 10 + "px";
-  tooltip.style.display = "block";
+  tooltip.style.display="block";
 }
+function hideTooltip(){document.getElementById("tooltip").style.display="none";}
 
-function hideTooltip() {
-  document.getElementById("tooltip").style.display = "none";
-}
-
-// ---------------- SUMMARY
-function buildSummary(groupName) {
-  const summary = {};
-
+// ---------------- SUMMARY ----------------
+function buildSummary(groupName){
+  const summary={};
   Object.values(players)
-    .filter(p => p.group === groupName)
+    .filter(p=>p.group===groupName)
     .forEach(p=>{
       p.needs.forEach(item=>{
-        if (!summary[item]) summary[item] = [];
+        if(!summary[item]) summary[item]=[];
         summary[item].push(p.name);
       });
     });
-
   return summary;
 }
 
-function renderSummary(containerId, summary) {
-  const container = document.getElementById(containerId);
+function renderSummary(containerId, summary){
+  const container=document.getElementById(containerId);
   container.innerHTML="";
-
   Object.entries(summary)
     .sort((a,b)=>b[1].length - a[1].length)
-    .forEach(([item, list])=>{
-      const div = document.createElement("div");
-      const highlight = list.length >= 3 ? "highlight":"";
+    .forEach(([item,list])=>{
+      const div=document.createElement("div");
+      const highlight = list.length>=3 ? "highlight":"";
+      const id = itemIDs[item]||0;
 
       div.innerHTML = `
-        <strong class="${highlight}">${item}</strong> (${list.length})
+        <a href="https://www.wowhead.com/tbc/item=${id}" 
+           data-wowhead="item=${id}" target="_blank">
+          <strong class="${highlight}">${item}</strong>
+        </a> (${list.length})
         <br>${list.join(", ")}
       `;
       container.appendChild(div);
     });
+
+  if(window.$WowheadPower) $WowheadPower.refreshLinks();
 }
 
-function renderSummaries() {
+function renderSummaries(){
   renderSummary("summary1", buildSummary("group1"));
   renderSummary("summary2", buildSummary("group2"));
 }
 
-// ----------------
+// ---------------- INIT ----------------
 loadData();
 
 </script>
